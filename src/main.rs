@@ -24,7 +24,10 @@ mod utils;
 
 use crate::acs::*;
 use crate::mng::ManagementSession;
-use crate::session::*;
+use crate::session::{
+    SecurityMode::{Insecure, Secure},
+    *,
+};
 use clap::{arg, command};
 use eyre::{eyre, Result, WrapErr};
 use hyper::server::conn::http1;
@@ -34,7 +37,6 @@ use native_tls::Identity;
 use std::io::Read;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio;
 use tokio::net::TcpListener;
 use tokio::sync::RwLock;
 
@@ -99,7 +101,7 @@ async fn main() -> Result<()> {
 
     // Get server hostname
     let mut hostname = acs.config.hostname.clone();
-    if hostname == "" {
+    if hostname.is_empty() {
         // hostname was not provided in configuration
         // Try to guess our public IP Address
         hostname = get_public_ipaddress()
@@ -210,13 +212,13 @@ async fn main() -> Result<()> {
             let (stream, _) = cpe_listener.accept().await.unwrap();
             let acs = cpe_acs.clone();
             tokio::task::spawn(async move {
-                let session = Arc::new(RwLock::new(TR069Session::new(acs, cpe_addr, false)));
+                let session = Arc::new(RwLock::new(TR069Session::new(acs, cpe_addr, Insecure)));
                 let service = |mut req: Request<hyper::body::Incoming>| {
                     let session = session.clone();
-                    return async move {
+                    async move {
                         let mut session = session.write().await;
-                        return session.handle(&mut req).await;
-                    };
+                        session.handle(&mut req).await
+                    }
                 };
                 if let Err(err) = http1::Builder::new()
                     .serve_connection(stream, service_fn(service))
@@ -235,21 +237,34 @@ async fn main() -> Result<()> {
             let acs = sec_acs.clone();
             let tls_acceptor = tls_acceptor.clone();
             tokio::task::spawn(async move {
-                let tls_stream = match tls_acceptor.accept(stream).await {
-                    Ok(value) => value,
+                let (tls_stream, peer_certificate) = match tls_acceptor.accept(stream).await {
+                    Ok(value) => {
+                        let peer_certificate = value
+                            .get_ref()
+                            .peer_certificate()
+                            .map_err(|err| {
+                                println!("failed to retrieve peer certificate: {:?}", err);
+                            })
+                            .unwrap_or_default();
+                        (value, peer_certificate)
+                    }
                     Err(err) => {
                         println!("tls accept error: {:?}", err);
                         return;
                     }
                 };
 
-                let session = Arc::new(RwLock::new(TR069Session::new(acs, sec_addr, true)));
+                let session = Arc::new(RwLock::new(TR069Session::new(
+                    acs,
+                    sec_addr,
+                    Secure(peer_certificate),
+                )));
                 let service = |mut req: Request<hyper::body::Incoming>| {
                     let session = session.clone();
-                    return async move {
+                    async move {
                         let mut session = session.write().await;
-                        return session.handle(&mut req).await;
-                    };
+                        session.handle(&mut req).await
+                    }
                 };
                 if let Err(err) = http1::Builder::new()
                     .serve_connection(tls_stream, service_fn(service))
@@ -270,10 +285,10 @@ async fn main() -> Result<()> {
                 let session = Arc::new(RwLock::new(ManagementSession::new(acs)));
                 let service = |mut req: Request<hyper::body::Incoming>| {
                     let session = session.clone();
-                    return async move {
+                    async move {
                         let mut session = session.write().await;
-                        return session.handle(&mut req).await;
-                    };
+                        session.handle(&mut req).await
+                    }
                 };
                 if let Err(err) = http1::Builder::new()
                     .serve_connection(stream, service_fn(service))

@@ -88,6 +88,7 @@ pub fn gencertificates(acsdir: &std::path::Path, common_name: &str) {
 
     let child_stdin = child.stdin.as_mut().unwrap();
     child_stdin.write_all(bytes).unwrap();
+    // TODO this is a no-op because child_stdin is a reference
     drop(child_stdin);
 
     let status = child.wait().unwrap().success();

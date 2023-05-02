@@ -66,7 +66,7 @@ pub struct Event {
 }
 
 impl Event {
-    pub fn contains(self: &Self, event_code: &str) -> bool {
+    pub fn contains(&self, event_code: &str) -> bool {
         for event in &self.event_struct {
             if event.event_code == event_code {
                 return true;

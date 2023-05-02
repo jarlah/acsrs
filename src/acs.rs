@@ -249,8 +249,8 @@ impl Acs {
         Ok(acs)
     }
 
-    pub fn print_config(self: &Self, hostname: &str) {
-        let hostname = match hostname.contains(":") {
+    pub fn print_config(&self, hostname: &str) {
+        let hostname = match hostname.contains(':') {
             true => {
                 format!("[{}]", hostname)
             }
@@ -259,7 +259,7 @@ impl Acs {
             }
         };
 
-        println!("");
+        println!();
         let addr: SocketAddr = self.config.secure_address.parse().unwrap();
         println!("For secure connections, please ensure your CPEs are configured with:");
         println!(
